@@ -15,7 +15,6 @@ export interface GeolocationDebugInfo {
 
 export function getCurrentLocation(): Promise<GeolocationResult> {
   return new Promise((resolve) => {
-    // Verificar se a API de geolocalização está disponível
     if (!navigator.geolocation) {
       resolve({
         latitude: null,
@@ -74,24 +73,54 @@ export function getCurrentLocation(): Promise<GeolocationResult> {
   });
 }
 
+// ⚠️ SOLUÇÃO: Normalizar coordenadas vindas do banco
+export function normalizeCoordinate(coord: string | number): number {
+  if (typeof coord === "number") {
+    return coord;
+  }
+
+  // Converte string com vírgula para ponto
+  const normalized = coord.toString().replace(",", ".");
+  return parseFloat(normalized);
+}
+
 // Função para formatar coordenadas para Google Maps
-export function formatCoordsForGoogleMaps(lat: number, lng: number): string {
-  return `${lat},${lng}`;
+export function formatCoordsForGoogleMaps(
+  lat: number | string,
+  lng: number | string
+): string {
+  const latNormalized = normalizeCoordinate(lat);
+  const lngNormalized = normalizeCoordinate(lng);
+
+  // Garante formato com ponto decimal
+  return `${latNormalized.toString().replace(",", ".")},${lngNormalized
+    .toString()
+    .replace(",", ".")}`;
 }
 
 // Função para gerar URL do Google Maps
-export function getGoogleMapsUrl(lat: number, lng: number): string {
-  return `https://www.google.com/maps?q=${lat},${lng}`;
+export function getGoogleMapsUrl(
+  lat: number | string,
+  lng: number | string
+): string {
+  const coordsFormatted = formatCoordsForGoogleMaps(lat, lng);
+  return `https://www.google.com/maps?q=${coordsFormatted}`;
 }
 
 // Função para gerar URL do Waze
-export function getWazeUrl(lat: number, lng: number): string {
-  return `https://waze.com/ul?ll=${lat},${lng}&navigate=yes`;
+export function getWazeUrl(lat: number | string, lng: number | string): string {
+  const latNormalized = normalizeCoordinate(lat);
+  const lngNormalized = normalizeCoordinate(lng);
+  return `https://waze.com/ul?ll=${latNormalized},${lngNormalized}&navigate=yes`;
 }
 
 // Função para abrir no Google Maps
-export function openInGoogleMaps(lat: number, lng: number): void {
+export function openInGoogleMaps(
+  lat: number | string,
+  lng: number | string
+): void {
   const url = getGoogleMapsUrl(lat, lng);
+  console.log("🗺️ Abrindo URL:", url);
   window.open(url, "_blank");
 }
 
@@ -120,21 +149,53 @@ export async function getLocationWithDebug(): Promise<GeolocationDebugInfo | nul
 }
 
 // Função para validar se as coordenadas são válidas
-export function validateCoordinates(lat: number, lng: number): boolean {
-  const isLatValid = lat >= -90 && lat <= 90;
-  const isLngValid = lng >= -180 && lng <= 180;
+export function validateCoordinates(
+  lat: number | string,
+  lng: number | string
+): boolean {
+  const latNormalized = normalizeCoordinate(lat);
+  const lngNormalized = normalizeCoordinate(lng);
+
+  const isLatValid = latNormalized >= -90 && latNormalized <= 90;
+  const isLngValid = lngNormalized >= -180 && lngNormalized <= 180;
 
   if (!isLatValid) {
-    console.error("❌ Latitude inválida:", lat, "(deve estar entre -90 e 90)");
+    console.error(
+      "❌ Latitude inválida:",
+      latNormalized,
+      "(deve estar entre -90 e 90)"
+    );
   }
 
   if (!isLngValid) {
     console.error(
       "❌ Longitude inválida:",
-      lng,
+      lngNormalized,
       "(deve estar entre -180 e 180)"
     );
   }
 
   return isLatValid && isLngValid;
+}
+
+// 🔧 FUNÇÃO HELPER: Para usar com dados do banco
+export function openLocationFromDatabase(
+  latitude: string,
+  longitude: string
+): void {
+  console.log("📊 Coordenadas do banco (antes):", { latitude, longitude });
+
+  const latNormalized = normalizeCoordinate(latitude);
+  const lngNormalized = normalizeCoordinate(longitude);
+
+  console.log("✅ Coordenadas normalizadas (depois):", {
+    latitude: latNormalized,
+    longitude: lngNormalized,
+  });
+
+  if (validateCoordinates(latNormalized, lngNormalized)) {
+    openInGoogleMaps(latNormalized, lngNormalized);
+  } else {
+    console.error("❌ Coordenadas inválidas após normalização");
+  }
 }

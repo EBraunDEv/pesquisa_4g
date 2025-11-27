@@ -12,6 +12,8 @@ import { Signal, MapPin, User, LogOut, Loader2, ChevronDown, Navigation } from "
 import type { User as UserType } from "@/app/page"
 import { getSupabaseClient, type PesquisaSinal } from "@/lib/supabase"
 import { getCurrentLocation, type GeolocationResult } from "@/lib/geolocation"
+import { db } from "@/lib/db" // 1. Importar o banco de dados local
+import { useToast } from "@/hooks/use-toast" // 2. Importar o hook de notificação
 
 interface SurveyScreenProps {
   user: UserType | null
@@ -22,6 +24,7 @@ interface SurveyScreenProps {
 const operadoras = ["Vivo", "Claro", "TIM", "Oi", "Outras"]
 
 export default function SurveyScreen({ user, onSubmit, onLogout }: SurveyScreenProps) {
+  const { toast } = useToast() // 3. Inicializar o hook de notificação
   const [formData, setFormData] = useState({
     nomeCidadao: "",
     endereco: "",
@@ -29,6 +32,10 @@ export default function SurveyScreen({ user, onSubmit, onLogout }: SurveyScreenP
     temSinal: "",
     operadoras: [] as string[],
     precisaDeslocar: "",
+    possuiOutroTerreno: "",
+    terrenoNoMunicipio: "",
+    sinalNoOutroTerreno: "",
+    enderecoDaLocalidade: "",
   })
   const [isLoading, setIsLoading] = useState(false)
   const [showOperadoras, setShowOperadoras] = useState(false)
@@ -58,40 +65,69 @@ export default function SurveyScreen({ user, onSubmit, onLogout }: SurveyScreenP
     }))
   }
 
+  // 4. Lógica de envio atualizada
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setSubmitError(null)
 
+    const currentLocation = await getCurrentLocation()
+
+    const pesquisaData = {
+      nome_cidadao: formData.nomeCidadao,
+      endereco: formData.endereco,
+      localidade: formData.localidade,
+      tem_sinal: formData.temSinal === "sim",
+      operadoras: formData.temSinal === "sim" ? formData.operadoras : [],
+      precisa_deslocar: formData.precisaDeslocar === "sim",
+      latitude: currentLocation.latitude,
+      longitude: currentLocation.longitude,
+      agente_nome: user?.name || null,
+      possui_outro_terreno: formData.possuiOutroTerreno === "sim",
+      terreno_no_municipio: formData.possuiOutroTerreno === "sim" ? formData.terrenoNoMunicipio === "sim" : null,
+      sinal_no_outro_terreno:
+        formData.possuiOutroTerreno === "sim" && formData.terrenoNoMunicipio === "sim"
+          ? formData.sinalNoOutroTerreno === "sim"
+          : null,
+      endereco_da_localidade: formData.possuiOutroTerreno === "sim" ? formData.enderecoDaLocalidade : null,
+    }
+
     try {
-      // Buscar localização atualizada no momento do envio
-      const currentLocation = await getCurrentLocation()
-
+      // Tenta enviar para o Supabase primeiro
       const supabase = getSupabaseClient()
-
-      const pesquisa: PesquisaSinal = {
-        nome_cidadao: formData.nomeCidadao,
-        endereco: formData.endereco,
-        localidade: formData.localidade,
-        tem_sinal: formData.temSinal === "sim",
-        operadoras: formData.temSinal === "sim" ? formData.operadoras : [],
-        precisa_deslocar: formData.precisaDeslocar === "sim",
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
-        agente_email: user?.email || null,
-        agente_nome: user?.name || null,
-      }
-
-      const { error } = await supabase.from("pesquisas_sinal").insert([pesquisa])
+      const { error } = await supabase.from("pesquisas_sinal").insert([pesquisaData])
 
       if (error) {
+        // Se der erro, o bloco catch abaixo será acionado
         throw new Error(error.message)
       }
 
+      // Se funcionar, mostra notificação de sucesso
+      toast({
+        title: "Pesquisa Enviada!",
+        description: "Os dados foram sincronizados com o servidor.",
+      })
       onSubmit()
     } catch (error) {
-      console.error("Erro ao salvar pesquisa:", error)
-      setSubmitError(error instanceof Error ? error.message : "Erro ao enviar pesquisa. Tente novamente.")
+      console.warn("Falha ao enviar para o Supabase, salvando localmente...", error)
+      try {
+        // Salva na nova estrutura "plana"
+        await db.pesquisas.add({
+          ...pesquisaData, // Espalha todos os campos da pesquisa
+          sync_status: "pending",
+          created_at: new Date(),
+        })
+
+        // Notifica o usuário que foi salvo localmente
+        toast({
+          title: "Pesquisa salva offline!",
+          description: "Será enviada quando a conexão for restaurada.",
+        })
+        onSubmit() // Avança para a tela de sucesso mesmo offline
+      } catch (localDbError) {
+        console.error("ERRO CRÍTICO: Falha ao salvar a pesquisa localmente:", localDbError)
+        setSubmitError("Não foi possível salvar a pesquisa. Tente novamente.")
+      }
     } finally {
       setIsLoading(false)
     }
@@ -103,7 +139,13 @@ export default function SurveyScreen({ user, onSubmit, onLogout }: SurveyScreenP
     formData.localidade &&
     formData.temSinal &&
     (formData.temSinal === "nao" || formData.operadoras.length > 0) &&
-    formData.precisaDeslocar
+    formData.precisaDeslocar &&
+    formData.possuiOutroTerreno &&
+    (formData.possuiOutroTerreno === "nao" || formData.terrenoNoMunicipio) &&
+    (formData.possuiOutroTerreno === "nao" || formData.enderecoDaLocalidade) &&
+    (formData.possuiOutroTerreno === "nao" ||
+      formData.terrenoNoMunicipio === "nao" ||
+      formData.sinalNoOutroTerreno)
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -349,6 +391,160 @@ export default function SurveyScreen({ user, onSubmit, onLogout }: SurveyScreenP
               </RadioGroup>
             </CardContent>
           </Card>
+
+          {/* Possui outro terreno? */}
+          <Card className="border-0 shadow-md">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                  <MapPin className="w-4 h-4 text-primary" />
+                </div>
+                <Label className="text-foreground font-semibold">Possui outro terreno/propriedade?</Label>
+              </div>
+              <RadioGroup
+                value={formData.possuiOutroTerreno}
+                onValueChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    possuiOutroTerreno: value,
+                    // Reset conditional fields if answer is "não"
+                    terrenoNoMunicipio: value === "nao" ? "" : prev.terrenoNoMunicipio,
+                    sinalNoOutroTerreno: value === "nao" ? "" : prev.sinalNoOutroTerreno,
+                    enderecoDaLocalidade: value === "nao" ? "" : prev.enderecoDaLocalidade,
+                  }))
+                }
+                className="flex gap-4"
+              >
+                <label
+                  className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl cursor-pointer transition-all ${
+                    formData.possuiOutroTerreno === "sim"
+                      ? "bg-accent text-accent-foreground"
+                      : "bg-secondary text-foreground"
+                  }`}
+                >
+                  <RadioGroupItem value="sim" id="terreno-sim" className="sr-only" />
+                  <span className="font-medium">Sim</span>
+                </label>
+                <label
+                  className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl cursor-pointer transition-all ${
+                    formData.possuiOutroTerreno === "nao"
+                      ? "bg-destructive text-destructive-foreground"
+                      : "bg-secondary text-foreground"
+                  }`}
+                >
+                  <RadioGroupItem value="nao" id="terreno-nao" className="sr-only" />
+                  <span className="font-medium">Não</span>
+                </label>
+              </RadioGroup>
+            </CardContent>
+          </Card>
+
+          {/* Terreno no mesmo município? (condicional) */}
+          {formData.possuiOutroTerreno === "sim" && (
+            <Card className="border-0 shadow-md">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-8 h-8 bg-accent/10 rounded-lg flex items-center justify-center">
+                    <MapPin className="w-4 h-4 text-accent" />
+                  </div>
+                  <Label className="text-foreground font-semibold">Esse outro terreno fica neste município?</Label>
+                </div>
+                <RadioGroup
+                  value={formData.terrenoNoMunicipio}
+                  onValueChange={(value) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      terrenoNoMunicipio: value,
+                      sinalNoOutroTerreno: value === "nao" ? "" : prev.sinalNoOutroTerreno,
+                    }))
+                  }
+                  className="flex gap-4"
+                >
+                  <label
+                    className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl cursor-pointer transition-all ${
+                      formData.terrenoNoMunicipio === "sim"
+                        ? "bg-accent text-accent-foreground"
+                        : "bg-secondary text-foreground"
+                    }`}
+                  >
+                    <RadioGroupItem value="sim" id="municipio-sim" className="sr-only" />
+                    <span className="font-medium">Sim</span>
+                  </label>
+                  <label
+                    className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl cursor-pointer transition-all ${
+                      formData.terrenoNoMunicipio === "nao"
+                        ? "bg-destructive text-destructive-foreground"
+                        : "bg-secondary text-foreground"
+                    }`}
+                  >
+                    <RadioGroupItem value="nao" id="municipio-nao" className="sr-only" />
+                    <span className="font-medium">Não</span>
+                  </label>
+                </RadioGroup>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Endereço da Localidade (condicional) */}
+          {formData.possuiOutroTerreno === "sim" && (
+            <Card className="border-0 shadow-md">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 bg-accent/10 rounded-lg flex items-center justify-center">
+                    <MapPin className="w-4 h-4 text-accent" />
+                  </div>
+                  <Label className="text-foreground font-semibold">Endereço da localidade</Label>
+                </div>
+                <Input
+                  placeholder="Endereço da outra propriedade"
+                  value={formData.enderecoDaLocalidade}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, enderecoDaLocalidade: e.target.value }))}
+                  className="h-12 rounded-xl bg-secondary border-0 text-foreground placeholder:text-muted-foreground"
+                  required={formData.possuiOutroTerreno === "sim"}
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Sinal no outro terreno? (condicional) */}
+          {formData.possuiOutroTerreno === "sim" && formData.terrenoNoMunicipio === "sim" && (
+            <Card className="border-0 shadow-md">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                    <Signal className="w-4 h-4 text-primary" />
+                  </div>
+                  <Label className="text-foreground font-semibold">Nele, há sinal de celular?</Label>
+                </div>
+                <RadioGroup
+                  value={formData.sinalNoOutroTerreno}
+                  onValueChange={(value) => setFormData((prev) => ({ ...prev, sinalNoOutroTerreno: value }))}
+                  className="flex gap-4"
+                >
+                  <label
+                    className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl cursor-pointer transition-all ${
+                      formData.sinalNoOutroTerreno === "sim"
+                        ? "bg-accent text-accent-foreground"
+                        : "bg-secondary text-foreground"
+                    }`}
+                  >
+                    <RadioGroupItem value="sim" id="outro-sinal-sim" className="sr-only" />
+                    <span className="font-medium">Sim</span>
+                  </label>
+                  <label
+                    className={`flex-1 flex items-center justify-center gap-2 p-4 rounded-xl cursor-pointer transition-all ${
+                      formData.sinalNoOutroTerreno === "nao"
+                        ? "bg-destructive text-destructive-foreground"
+                        : "bg-secondary text-foreground"
+                    }`}
+                  >
+                    <RadioGroupItem value="nao" id="outro-sinal-nao" className="sr-only" />
+                    <span className="font-medium">Não</span>
+                  </label>
+                </RadioGroup>
+              </CardContent>
+            </Card>
+          )}
 
           {submitError && (
             <Card className="border-0 shadow-md bg-destructive/10">

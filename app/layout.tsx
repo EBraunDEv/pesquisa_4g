@@ -3,6 +3,8 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
+import { SyncProvider } from "@/components/sync-provider";
+import { Toaster } from "@/components/ui/toaster";
 
 const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
@@ -54,6 +56,8 @@ export default function RootLayout({
     <html lang="pt-BR" className="h-dvh" suppressHydrationWarning>
       <body className={`font-sans antialiased`}>
         {children}
+        <Toaster />
+        <SyncProvider />
         <Analytics />
       </body>
     </html>

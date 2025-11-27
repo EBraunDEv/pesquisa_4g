@@ -15,7 +15,7 @@ interface LoginScreenProps {
 }
 
 export default function LoginScreen({ onLogin }: LoginScreenProps) {
-  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -28,10 +28,9 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
 
     await new Promise((resolve) => setTimeout(resolve, 1500));
 
-    if (email && password.length >= 4) {
+    if (name && password.length >= 4) {
       onLogin({
-        name: email.split("@")[0],
-        email,
+        name,
       });
     } else {
       setError("Credenciais inválidas. Tente novamente.");
@@ -70,15 +69,15 @@ export default function LoginScreen({ onLogin }: LoginScreenProps) {
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="email" className="text-foreground font-medium">
-                  E-mail
+                <Label htmlFor="name" className="text-foreground font-medium">
+                  Nome do Agente
                 </Label>
                 <Input
-                  id="email"
-                  type="email"
-                  placeholder="seu@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="name"
+                  type="text"
+                  placeholder="Digite seu nome"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                   className="h-12 rounded-xl bg-secondary border-0 text-foreground placeholder:text-muted-foreground"
                   required
                 />

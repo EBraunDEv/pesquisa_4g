@@ -7,7 +7,6 @@ import SuccessScreen from "@/components/success-screen"
 
 export type User = {
   name: string
-  email: string
 }
 
 export default function Home() {

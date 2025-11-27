@@ -24,7 +24,10 @@ export interface PesquisaSinal {
   precisa_deslocar: boolean
   latitude: number | null
   longitude: number | null
-  agente_email: string | null
   agente_nome: string | null
   created_at?: string
+  // Campos adicionados
+  possui_outro_terreno?: boolean | null
+  terreno_no_municipio?: boolean | null
+  sinal_no_outro_terreno?: boolean | null
 }

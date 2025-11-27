@@ -12,7 +12,6 @@ export const metadata: Metadata = {
   title: "Pesquisa de Sinal - Conectividade Brasil",
   description:
     "Aplicativo para pesquisa de cobertura de sinal celular em comunidades",
-  generator: "v0.app",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,

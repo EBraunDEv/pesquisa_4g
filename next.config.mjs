@@ -1,3 +1,5 @@
+import withPWA from 'next-pwa';
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   typescript: {
@@ -8,4 +10,13 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+// Aplica a configuração do PWA apenas em produção para evitar conflito com o Turbopack em desenvolvimento
+const finalConfig = process.env.NODE_ENV === 'production'
+  ? withPWA({
+      dest: 'public',
+      register: true,
+      skipWaiting: true,
+    })(nextConfig)
+  : nextConfig;
+
+export default finalConfig;

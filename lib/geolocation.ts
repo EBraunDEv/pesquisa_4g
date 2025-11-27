@@ -26,16 +26,22 @@ export function getCurrentLocation(): Promise<GeolocationResult> {
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        console.log("📍 Coordenadas obtidas:", {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
+        // ⚠️ IMPORTANTE: Garantir que sempre retorna NUMBER, não string
+        const latitude = Number(position.coords.latitude);
+        const longitude = Number(position.coords.longitude);
+
+        console.log("📍 Coordenadas obtidas (tipo):", {
+          latitude,
+          longitude,
+          latitudeType: typeof latitude,
+          longitudeType: typeof longitude,
           accuracy: position.coords.accuracy,
           timestamp: new Date(position.timestamp).toISOString(),
         });
 
         resolve({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
+          latitude,
+          longitude,
           accuracy: position.coords.accuracy,
           timestamp: position.timestamp,
           error: null,
@@ -82,6 +88,24 @@ export function normalizeCoordinate(coord: string | number): number {
   // Converte string com vírgula para ponto
   const normalized = coord.toString().replace(",", ".");
   return parseFloat(normalized);
+}
+
+// 🔧 FUNÇÃO PARA SALVAR: Garante formato correto para banco de dados
+export function formatCoordinateForDatabase(
+  coord: number | null
+): number | null {
+  if (coord === null) return null;
+
+  // Força o formato com ponto decimal, não vírgula
+  const formatted = Number(coord.toString().replace(",", "."));
+
+  // Valida se é um número válido
+  if (isNaN(formatted)) {
+    console.error("❌ Coordenada inválida:", coord);
+    return null;
+  }
+
+  return formatted;
 }
 
 // Função para formatar coordenadas para Google Maps
